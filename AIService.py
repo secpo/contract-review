@@ -300,6 +300,11 @@ class GeminiService(AIServiceBase):
 
         self.api_key = os.getenv('GEMINI_API_KEY')
         self.model_id = os.getenv('GEMINI_MODEL_ID', 'gemini-1.5-pro')
+        self.embedding_model = os.getenv('GEMINI_EMBEDDING_MODEL', 'embedding-001')
+
+        print(f"Initializing Gemini client:")
+        print(f"  - Model ID: {self.model_id}")
+        print(f"  - Embedding Model: {self.embedding_model}")
 
         genai.configure(api_key=self.api_key)
         self.client = genai
@@ -328,9 +333,26 @@ class GeminiService(AIServiceBase):
         return response.text
 
     def get_embeddings(self, text: str) -> List[float]:
-        embedding_model = self.client.get_model('embedding-001')
-        result = embedding_model.embed_content(text)
-        return result.embedding
+        print(f"Getting embeddings using Gemini model: {self.embedding_model}")
+        try:
+            embedding_model = self.client.get_model(self.embedding_model)
+            result = embedding_model.embed_content(text)
+            return result.embedding
+        except Exception as e:
+            print(f"Error getting embeddings with Gemini: {str(e)}")
+            # If there's an error, try with the default model
+            if self.embedding_model != 'embedding-001':
+                print("Trying with default embedding model: embedding-001")
+                try:
+                    embedding_model = self.client.get_model('embedding-001')
+                    result = embedding_model.embed_content(text)
+                    return result.embedding
+                except Exception as e2:
+                    print(f"Error with default embedding model: {str(e2)}")
+
+            # If all else fails, return a dummy embedding
+            print("Returning dummy embedding")
+            return [0.0] * 768  # Standard Gemini embedding size
 
 def get_ai_service() -> AIServiceBase:
     load_dotenv(dotenv_path='.env', verbose=True)

@@ -2,13 +2,9 @@ from neo4j import GraphDatabase
 import json
 import os
 from dotenv import load_dotenv
-from AIService import get_ai_service
 
 # 加载环境变量
-load_dotenv()
-
-# 获取AI服务实例
-ai_service = get_ai_service()
+load_dotenv(dotenv_path='.env', verbose=True)
 
 CREATE_GRAPH_STATEMENT = """
 WITH $data AS data
@@ -75,7 +71,7 @@ EMBEDDINGS_STATEMENT_OPENAI = """
 MATCH (e:Excerpt)
 WHERE e.text is not null and e.embedding is null
 SET e.embedding = genai.vector.encode(e.text, "OpenAI", {
-                    token: $token, model: $model, dimensions: 1536
+                    token: $token, model: $model, dimensions: $dimensions
                   })
 """
 
@@ -83,7 +79,7 @@ EMBEDDINGS_STATEMENT_GEMINI = """
 MATCH (e:Excerpt)
 WHERE e.text is not null and e.embedding is null
 SET e.embedding = genai.vector.encode(e.text, "VertexAI", {
-                    token: $token, model: "embedding-001", dimensions: 768
+                    token: $token, model: $model, dimensions: $dimensions
                   })
 """
 
@@ -108,18 +104,29 @@ NEO4J_USER=os.getenv('NEO4J_USERNAME', 'neo4j')
 NEO4J_PASSWORD=os.getenv('NEO4J_PASSWORD')
 JSON_CONTRACT_FOLDER = './data/output/'
 
-# 获取AI服务类型和API密钥
+# 获取AI服务类型和配置
 AI_SERVICE_TYPE = os.getenv('AI_SERVICE_TYPE', 'openai').lower()
+
 if AI_SERVICE_TYPE == 'openai':
     API_KEY = os.getenv('OPENAI_API_KEY')
     EMBEDDING_MODEL = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
-    VECTOR_DIMENSIONS = 1536
+
+    # 根据模型确定向量维度
+    if 'text-embedding-3' in EMBEDDING_MODEL:
+        VECTOR_DIMENSIONS = 1536
+    elif 'bge-large' in EMBEDDING_MODEL:
+        VECTOR_DIMENSIONS = 1024
+    else:
+        VECTOR_DIMENSIONS = 1536  # OpenAI默认
+
     EMBEDDINGS_STATEMENT = EMBEDDINGS_STATEMENT_OPENAI
+    print(f"使用OpenAI embedding模型: {EMBEDDING_MODEL}, 维度: {VECTOR_DIMENSIONS}")
 elif AI_SERVICE_TYPE == 'gemini':
     API_KEY = os.getenv('GEMINI_API_KEY')
-    EMBEDDING_MODEL = 'embedding-001'
-    VECTOR_DIMENSIONS = 768
+    EMBEDDING_MODEL = os.getenv('GEMINI_EMBEDDING_MODEL', 'embedding-001')
+    VECTOR_DIMENSIONS = 768  # Gemini embedding-001默认
     EMBEDDINGS_STATEMENT = EMBEDDINGS_STATEMENT_GEMINI
+    print(f"使用Gemini embedding模型: {EMBEDDING_MODEL}, 维度: {VECTOR_DIMENSIONS}")
 else:
     raise ValueError(f"不支持的AI服务类型: {AI_SERVICE_TYPE}")
 
@@ -145,5 +152,8 @@ for json_contract in json_contracts:
 
 create_full_text_indices(driver)
 driver.execute_query(CREATE_VECTOR_INDEX_STATEMENT)
-print(f"使用 {AI_SERVICE_TYPE} 为合同摘录生成嵌入向量...")
-driver.execute_query(EMBEDDINGS_STATEMENT, token=API_KEY, model=EMBEDDING_MODEL)
+print(f"为合同摘录生成嵌入向量，使用模型: {EMBEDDING_MODEL}...")
+driver.execute_query(EMBEDDINGS_STATEMENT,
+                    token=API_KEY,
+                    model=EMBEDDING_MODEL,
+                    dimensions=VECTOR_DIMENSIONS)
