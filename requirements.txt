@@ -3,3 +3,7 @@ neo4j-graphrag == 1.0.0
 semantic-kernel == 1.11.0
 streamlit == 1.39.0
 openai == 1.51.2
+google-generativeai == 0.3.2
+python-dotenv == 1.0.0
+PyPDF2 == 3.0.1
+docx2txt == 0.8

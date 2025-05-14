@@ -1,26 +1,28 @@
 import os
 import asyncio
 from semantic_kernel import Kernel
-from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 from semantic_kernel.contents.chat_history import ChatHistory
 from ContractPlugin import ContractPlugin
 from ContractService import ContractSearchService
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
-from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_prompt_execution_settings import (
-    OpenAIChatPromptExecutionSettings)
 from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
 from semantic_kernel.functions.kernel_arguments import KernelArguments
 import logging
+from dotenv import load_dotenv
 
+# 加载环境变量
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 
-#get info from environment
-OPENAI_KEY = os.getenv('OPENAI_API_KEY')
+# 从环境变量获取配置
 NEO4J_URI=os.getenv('NEO4J_URI', 'bolt://localhost:7687')
 NEO4J_USER=os.getenv('NEO4J_USERNAME', 'neo4j')
 NEO4J_PASSWORD=os.getenv('NEO4J_PASSWORD')
 service_id = "contract_search"
+
+# 获取AI服务类型
+AI_SERVICE_TYPE = os.getenv('AI_SERVICE_TYPE', 'openai').lower()
 
 # Initialize the kernel
 kernel = Kernel()
@@ -29,11 +31,45 @@ kernel = Kernel()
 contract_search_neo4j = ContractSearchService(NEO4J_URI,NEO4J_USER,NEO4J_PASSWORD)
 kernel.add_plugin(ContractPlugin(contract_search_service=contract_search_neo4j),plugin_name="contract_search")
 
-# Add the OpenAI chat completion service to the Kernel
-kernel.add_service(OpenAIChatCompletion(ai_model_id="gpt-4o",api_key=OPENAI_KEY, service_id=service_id))
+# 根据AI服务类型添加相应的聊天完成服务
+if AI_SERVICE_TYPE == 'openai':
+    from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
+    from semantic_kernel.connectors.ai.open_ai.prompt_execution_settings.open_ai_prompt_execution_settings import (
+        OpenAIChatPromptExecutionSettings)
+
+    OPENAI_KEY = os.getenv('OPENAI_API_KEY')
+    OPENAI_MODEL_ID = os.getenv('OPENAI_MODEL_ID', 'gpt-4o')
+    OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+
+    # 添加OpenAI聊天完成服务
+    kernel.add_service(OpenAIChatCompletion(
+        ai_model_id=OPENAI_MODEL_ID,
+        api_key=OPENAI_KEY,
+        service_id=service_id,
+        base_url=OPENAI_BASE_URL
+    ))
+
+elif AI_SERVICE_TYPE == 'gemini':
+    from semantic_kernel.connectors.ai.google import GoogleAITextCompletion
+    from semantic_kernel.connectors.ai.google.prompt_execution_settings.google_ai_prompt_execution_settings import (
+        GoogleAITextPromptExecutionSettings
+    )
+
+    GEMINI_KEY = os.getenv('GEMINI_API_KEY')
+    GEMINI_MODEL_ID = os.getenv('GEMINI_MODEL_ID', 'gemini-1.5-pro')
+
+    # 添加Gemini文本完成服务
+    kernel.add_service(GoogleAITextCompletion(
+        ai_model_id=GEMINI_MODEL_ID,
+        api_key=GEMINI_KEY,
+        service_id=service_id
+    ))
+
+else:
+    raise ValueError(f"不支持的AI服务类型: {AI_SERVICE_TYPE}")
 
 # Enable automatic function calling
-settings: OpenAIChatPromptExecutionSettings = kernel.get_prompt_execution_settings_from_service_id(service_id=service_id)
+settings = kernel.get_prompt_execution_settings_from_service_id(service_id=service_id)
 settings.function_choice_behavior = FunctionChoiceBehavior.Auto(filters={"included_plugins": ["contract_search"]})
 
 
@@ -54,7 +90,7 @@ async def basic_agent() :
         history.add_user_message(userInput)
 
         # 3. Get the response from the AI with automatic function calling
-        chat_completion : OpenAIChatCompletion = kernel.get_service(type=ChatCompletionClientBase)
+        chat_completion = kernel.get_service(type=ChatCompletionClientBase)
         result = (await chat_completion.get_chat_message_contents(
             chat_history=history,
             settings=settings,
@@ -67,7 +103,7 @@ async def basic_agent() :
 
         # Add the message from the agent to the chat history
         history.add_message(result)
-    
+
 
 async def test_contract_search():
     print(
@@ -110,7 +146,7 @@ async def test_contracts_with_clause_search():
     )
 
 if __name__ == "__main__":
-    
+
     asyncio.run(basic_agent())
 
     #OR test individual data retrieval functions
@@ -120,4 +156,4 @@ if __name__ == "__main__":
     #asyncio.run(test_contracts_with_clause_search())
 
 
-    
+
