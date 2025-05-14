@@ -32,19 +32,20 @@ except Exception as e:
 def process_document(document_path):
     """Process document and extract information"""
     print(f'Processing file: {document_path}')
-    
+
     # Check if file exists
     if not os.path.exists(document_path):
         print(f"Error: File does not exist: {document_path}")
         return None
-        
+
     # Check file size
     file_size = os.path.getsize(document_path)
     print(f"File size: {file_size} bytes")
-    
+
     try:
-        # Use AI service to process document
-        complete_response = ai_service.process_document(
+        # 使用AI服务处理文档，自动处理大型文档
+        # 使用process_large_document方法，它会根据MAX_TOKEN参数自动分块处理
+        complete_response = ai_service.process_large_document(
             document_path=document_path,
             system_prompt=system_instruction,
             user_prompt=extraction_prompt
@@ -54,12 +55,24 @@ def process_document(document_path):
         print(f"Error processing document: {str(e)}")
         import traceback
         traceback.print_exc()
-        return None
+
+        # 如果使用process_large_document失败，尝试使用原始的process_document方法
+        try:
+            print("Falling back to standard document processing...")
+            complete_response = ai_service.process_document(
+                document_path=document_path,
+                system_prompt=system_instruction,
+                user_prompt=extraction_prompt
+            )
+            return complete_response
+        except Exception as e2:
+            print(f"Error in fallback processing: {str(e2)}")
+            return None
 
 def main():
     # Supported file extensions
     supported_extensions = ['.pdf', '.docx', '.doc', '.txt']
-    
+
     # Get all supported format files from input directory
     document_files = []
     try:
@@ -70,29 +83,29 @@ def main():
     except Exception as e:
         print(f"Error reading input directory: {str(e)}")
         sys.exit(1)
-    
+
     if not document_files:
         print("No supported document files found. Supported formats: PDF, DOCX, DOC, TXT")
         return
-    
+
     # Ensure output directories exist
     os.makedirs('./data/debug/', exist_ok=True)
     os.makedirs('./data/output/', exist_ok=True)
-    
+
     for document_filename in document_files:
         try:
             input_path = os.path.join('./data/input/', document_filename)
-            
+
             # Process document
             complete_response = process_document(input_path)
             if not complete_response:
                 print(f"Failed to process {document_filename}")
                 continue
-            
+
             # Save complete response for debugging
             debug_filename = os.path.join('./data/debug/', f'complete_response_{document_filename}.json')
             save_json_string_to_file(complete_response, debug_filename)
-            
+
             # Try to parse response as JSON
             try:
                 contract_json = extract_json_from_string(complete_response)

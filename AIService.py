@@ -2,12 +2,17 @@ import os
 import json
 import requests
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from dotenv import load_dotenv
+from DocumentProcessor import DocumentProcessor
 
 load_dotenv(dotenv_path='.env', verbose=True)
 
 class AIServiceBase(ABC):
+    def __init__(self):
+        # 初始化文档处理器
+        self.document_processor = DocumentProcessor()
+
     @abstractmethod
     def process_document(self, document_path: str, prompt: str) -> str:
         pass
@@ -16,8 +21,89 @@ class AIServiceBase(ABC):
     def get_embeddings(self, text: str) -> List[float]:
         pass
 
+    def process_large_document(self, document_path: str, system_prompt: str, user_prompt: str) -> str:
+        """
+        处理大型文档，自动分块并合并结果
+
+        Args:
+            document_path: 文档路径
+            system_prompt: 系统提示
+            user_prompt: 用户提示
+
+        Returns:
+            处理结果
+        """
+        print(f"处理大型文档: {document_path}")
+
+        # 使用DocumentProcessor分块处理文档
+        try:
+            chunks = self.document_processor.process_file(document_path)
+            print(f"文档已分为 {len(chunks)} 个块")
+
+            if len(chunks) == 1:
+                # 如果只有一个块，直接处理
+                return self.process_document(document_path, system_prompt, user_prompt)
+
+            # 处理每个块
+            results = []
+            for i, chunk in enumerate(chunks):
+                print(f"处理块 {i+1}/{len(chunks)}")
+
+                # 创建临时文件
+                temp_file_path = f"./data/temp/chunk_{i+1}.txt"
+                os.makedirs("./data/temp", exist_ok=True)
+
+                with open(temp_file_path, "w", encoding="utf-8") as f:
+                    f.write(chunk)
+
+                # 修改提示，指明这是文档的一部分
+                chunk_user_prompt = f"{user_prompt}\n\n注意：这是文档的第 {i+1}/{len(chunks)} 部分。"
+
+                # 处理块
+                chunk_result = self.process_document(temp_file_path, system_prompt, chunk_user_prompt)
+                results.append(chunk_result)
+
+                # 删除临时文件
+                try:
+                    os.remove(temp_file_path)
+                except:
+                    pass
+
+            # 如果有多个结果，合并它们
+            if len(results) > 1:
+                # 创建合并提示
+                merge_prompt = f"我已经分析了一个文档的 {len(chunks)} 个部分，得到了以下结果：\n\n"
+                for i, result in enumerate(results):
+                    merge_prompt += f"--- 第 {i+1} 部分结果 ---\n{result}\n\n"
+
+                merge_prompt += "请将这些结果合并为一个连贯的回答，确保信息不重复且保持原始格式。"
+
+                # 创建临时文件
+                temp_file_path = "./data/temp/merge_prompt.txt"
+                with open(temp_file_path, "w", encoding="utf-8") as f:
+                    f.write(merge_prompt)
+
+                # 处理合并提示
+                final_result = self.process_document(temp_file_path, system_prompt, "请合并以下分析结果：")
+
+                # 删除临时文件
+                try:
+                    os.remove(temp_file_path)
+                except:
+                    pass
+
+                return final_result
+            else:
+                return results[0]
+        except Exception as e:
+            print(f"处理大型文档时出错: {str(e)}")
+            # 如果分块处理失败，尝试直接处理整个文档
+            print("尝试直接处理整个文档")
+            return self.process_document(document_path, system_prompt, user_prompt)
+
 class OpenAIService(AIServiceBase):
     def __init__(self):
+        super().__init__()
         from openai import OpenAI
 
         self.api_key = os.getenv('OPENAI_API_KEY')
@@ -296,6 +382,7 @@ class OpenAIService(AIServiceBase):
 
 class GeminiService(AIServiceBase):
     def __init__(self):
+        super().__init__()
         import google.generativeai as genai
 
         self.api_key = os.getenv('GEMINI_API_KEY')

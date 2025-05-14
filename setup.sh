@@ -47,6 +47,10 @@ if [ ! -f ".env" ]; then
 # 选择AI服务类型: openai 或 gemini
 AI_SERVICE_TYPE=openai
 
+# 文档处理配置
+# 每个分块的最大token数量，根据使用的模型调整
+MAX_TOKEN=4000
+
 # OpenAI配置
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
